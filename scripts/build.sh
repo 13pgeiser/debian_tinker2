@@ -93,8 +93,21 @@ if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
 fi
 
 ###############################################################################
+# Get debian root
+if [ ! -d "$TOOLS_FOLDER/debian_root" ]; then
+	(
+		cd "$TOOLS_FOLDER" || exit 1
+		# Make sure qemu-arm can execute transparently ARM binaries.
+		sudo mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
+		sudo update-binfmts --enable qemu-arm
+		# Extract debian!
+		sudo debootstrap --arch=arm64 bullseye debian_root http://httpredir.debian.org/debian
+	)
+fi
+
+###############################################################################
 # Prepare SD card
-dd if=/dev/zero of="$TOOLS_FOLDER/sdcard.img" bs=1M count=64
+dd if=/dev/zero of="$TOOLS_FOLDER/sdcard.img" bs=1M count=2048
 cat <<EOT | /sbin/parted "$TOOLS_FOLDER/sdcard.img"
 mktable gpt
 mkpart uboot ext4 16384s 24575s
@@ -134,6 +147,19 @@ sudo lsblk --raw --noheadings "$loop" | tail -n +2 | while IFS= read -r line; do
 	fi
 done
 
+run_in_chroot() {
+	sudo mount -t proc proc /media/proc
+	sudo mount -o bind /dev/ /media/dev/
+	sudo mount -o bind /dev/pts /media/dev/pts
+	sudo chmod +x /media/root/third-stage
+	sudo LANG=C chroot /media /root/third-stage
+	sudo umount /media/dev/pts
+	sudo umount /media/dev/
+	sudo umount /media/proc
+	sudo rm -f debian_root/root/third-stage
+	sudo rm -f /media/root/.bash_history
+}
+
 # create filesystem and copy files.
 sudo mkfs.ext4 -L root "${loop}p4"
 sudo mount "${loop}p4" /media
@@ -141,6 +167,77 @@ sudo mkdir -p /media/boot/dtbs/rockchip/
 sudo cp "$dtb" /media/boot/dtbs/rockchip/
 sudo cp "$kernel_folder/arch/arm64/boot/Image" /media/boot
 sudo cp "$TOOLS_FOLDER/boot.scr" /media/boot/
+sudo rsync -ax "$TOOLS_FOLDER"/debian_root/* /media
+sudo cp "$TOOLS_FOLDER"/*.deb /media/
+
+# Update Apt sources for bullseye
+sudo bash -c 'cat >/media/etc/apt/sources.list' <<EOF
+deb http://httpredir.debian.org/debian bullseye main non-free contrib
+deb-src http://httpredir.debian.org/debian bullseye main non-free contrib
+deb https://security.debian.org/debian-security bullseye-security main contrib non-free
+EOF
+
+# Add loopback interface
+sudo mkdir -p /media/etc/network
+sudo bash -c 'cat >/media/etc/network/interfaces' <<EOF
+auto lo
+iface lo inet loopback
+EOF
+
+# And configure default DNS (google...)
+sudo bash -c 'cat >/media/etc/resolv.conf' <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF
+
+# Make sure to get new SSH keys on installation
+# Taken as-is from https://github.com/RPi-Distro/raspberrypi-sys-mods/blob/master/debian/raspberrypi-sys-mods.regenerate_ssh_host_keys.service
+sudo bash -c 'cat >/media/etc/systemd/system/regenerate_ssh_host_keys.service' <<EOF
+[Unit]
+Description=Regenerate SSH host keys
+Before=ssh.service
+ConditionFileIsExecutable=/usr/bin/ssh-keygen
+
+[Service]
+Type=oneshot
+ExecStartPre=-/bin/dd if=/dev/hwrng of=/dev/urandom count=1 bs=4096
+ExecStartPre=-/bin/sh -c "/bin/rm -f -v /etc/ssh/ssh_host_*_key*"
+ExecStart=/usr/bin/ssh-keygen -A -v
+ExecStartPost=/bin/systemctl disable regenerate_ssh_host_keys
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo bash -c 'cat >/media/root/third-stage' <<EOF
+	#!/bin/bash
+	set -x
+	echo "root:toor" | chpasswd
+	export DEBIAN_FRONTEND=noninteractive
+	apt-get update
+	apt-get -y --no-install-recommends install ca-certificates
+	set -ex
+	apt-get update
+	apt-get -y dist-upgrade
+	apt-get clean
+	apt-get -y --no-install-recommends install \
+		sudo xz-utils wpasupplicant  \
+		locales-all initramfs-tools u-boot-tools locales \
+		console-common less network-manager git laptop-mode-tools \
+		alsa-utils pulseaudio python3 task-ssh-server \
+		firmware-realtek firmware-linux
+	apt-get clean
+	dpkg -i /*.deb
+	apt-get -y autoremove
+	apt-get clean
+	depmod -a "\$(ls /lib/modules)"
+	# Enable ssh key regeneration
+	systemctl enable regenerate_ssh_host_keys
+EOF
+ls /media
+run_in_chroot
+sudo rm -f /media/*.deb
+df -h | grep /media
 sudo umount /media
 sudo losetup -d "$loop"
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 source bash-scripts/helpers.sh
 run_shfmt_and_shellcheck ./*.sh
 run_shfmt_and_shellcheck ./scripts/*.sh
