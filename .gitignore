@@ -1,6 +1,4 @@
-arm-trusted-firmware/
+_tools/
 docker/
-rkbin/
-u-boot/
 *.img
 
