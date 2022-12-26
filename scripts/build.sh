@@ -171,7 +171,7 @@ sudo rsync -ax "$TOOLS_FOLDER"/debian_root/* /media
 sudo cp "$TOOLS_FOLDER"/*.deb /media/
 
 # Update Apt sources for bullseye
-sudo bash -c 'cat >/media/etc/apt/sources.list' <<EOF
+sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
 deb http://httpredir.debian.org/debian bullseye main non-free contrib
 deb-src http://httpredir.debian.org/debian bullseye main non-free contrib
 deb https://security.debian.org/debian-security bullseye-security main contrib non-free
@@ -179,20 +179,20 @@ EOF
 
 # Add loopback interface
 sudo mkdir -p /media/etc/network
-sudo bash -c 'cat >/media/etc/network/interfaces' <<EOF
+sudo bash -c 'cat >/media/etc/network/interfaces' <<'EOF'
 auto lo
 iface lo inet loopback
 EOF
 
 # And configure default DNS (google...)
-sudo bash -c 'cat >/media/etc/resolv.conf' <<EOF
+sudo bash -c 'cat >/media/etc/resolv.conf' <<'EOF'
 nameserver 8.8.8.8
 nameserver 8.8.4.4
 EOF
 
 # Make sure to get new SSH keys on installation
 # Taken as-is from https://github.com/RPi-Distro/raspberrypi-sys-mods/blob/master/debian/raspberrypi-sys-mods.regenerate_ssh_host_keys.service
-sudo bash -c 'cat >/media/etc/systemd/system/regenerate_ssh_host_keys.service' <<EOF
+sudo bash -c 'cat >/media/etc/systemd/system/regenerate_ssh_host_keys.service' <<'EOF'
 [Unit]
 Description=Regenerate SSH host keys
 Before=ssh.service
@@ -209,7 +209,40 @@ ExecStartPost=/bin/systemctl disable regenerate_ssh_host_keys
 WantedBy=multi-user.target
 EOF
 
-sudo bash -c 'cat >/media/root/third-stage' <<EOF
+sudo bash -c 'cat >/media/root/resize.sh' <<'EOF'
+#!/bin/bash
+BOOT_PART="$(mount | grep 'on / type' | cut -d' ' -f1)"
+echo "BOOT_PART: $BOOT_PART"
+BOOT_DEV="/dev/$(lsblk -no pkname "$BOOT_PART")"
+echo "BOOT_DEV: $BOOT_DEV"
+BLOCK_DEV="$(echo "$BOOT_PART" | cut -d'/' -f3)"
+echo "BLOCK_DEV $BLOCK_DEV"
+PART_NUM="$(cat /sys/class/block/$BLOCK_DEV/partition)"
+printf "fix\n" | parted ---pretend-input-tty "$BOOT_DEV" print
+parted -s "$BOOT_DEV" "resizepart $PART_NUM -1" quit
+partprobe
+resize2fs "$BOOT_PART"
+sync
+reboot
+EOF
+sudo chmod +x /media/root/resize.sh
+
+sudo bash -c 'cat >/media/etc/systemd/system/resize_root.service' <<'EOF'
+[Unit]
+Description=Resize root partition
+After=systemd-fsck-root.service
+ConditionFileIsExecutable=/root/resize.sh
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/systemctl disable resize_root
+ExecStart=/root/resize.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo bash -c 'cat >/media/root/third-stage' <<'EOF'
 	#!/bin/bash
 	set -x
 	echo "root:toor" | chpasswd
@@ -218,28 +251,31 @@ sudo bash -c 'cat >/media/root/third-stage' <<EOF
 	apt-get -y --no-install-recommends install ca-certificates
 	set -ex
 	apt-get update
-	apt-get -y dist-upgrade
-	apt-get clean
 	apt-get -y --no-install-recommends install \
-		sudo xz-utils wpasupplicant  \
+		sudo xz-utils ntp wpasupplicant  \
 		locales-all initramfs-tools u-boot-tools locales \
-		console-common less network-manager git laptop-mode-tools \
-		alsa-utils pulseaudio python3 task-ssh-server \
-		firmware-realtek firmware-linux
+		console-common less network-manager laptop-mode-tools \
+		python3 task-ssh-server firmware-realtek firmware-linux parted
 	apt-get clean
 	dpkg -i /*.deb
+	apt-get -y dist-upgrade
 	apt-get -y autoremove
 	apt-get clean
-	depmod -a "\$(ls /lib/modules)"
+	depmod -a "$(ls /lib/modules)"
 	# Enable ssh key regeneration
 	systemctl enable regenerate_ssh_host_keys
+	systemctl enable resize_root
 EOF
 ls /media
 run_in_chroot
 sudo rm -f /media/*.deb
 df -h | grep /media
+sudo rm -f /media/fill
 sudo umount /media
 sudo losetup -d "$loop"
+
+# compress image
+zstd "$TOOLS_FOLDER/sdcard.img"
 
 # All set
 echo "Done successfully!"
