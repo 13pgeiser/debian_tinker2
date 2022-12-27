@@ -1,0 +1,37 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Publish binaries
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: arm_trusted
+      run: bash build.sh arm_trusted
+    - name: trust_img
+      run: bash build.sh trust_img
+    - name: uboot
+      run: bash build.sh uboot
+    - name: kernel
+      run: bash build.sh kernel
+    - name: debian_root
+      run: bash build.sh debian_root
+    - name: sdcard
+      run: bash build.sh sdcard
+    - name: Release
+      run: bash build.sh release
+    - name: Create release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "release/*"
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+

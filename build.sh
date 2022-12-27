@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 source bash-scripts/helpers.sh
-run_shfmt_and_shellcheck ./*.sh
-run_shfmt_and_shellcheck ./scripts/*.sh
+if [ -z "$1" ]; then
+	run_shfmt_and_shellcheck ./*.sh
+	run_shfmt_and_shellcheck ./scripts/*.sh
+fi
 docker_configure
 docker_setup "tinker2"
 dockerfile_create
@@ -20,7 +22,7 @@ RUN set -ex \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 EOF
 docker_build_image_and_create_volume
-#$DOCKER_RUN_IT /bin/bash
 sudo modprobe loop
 sudo losetup -f
-$DOCKER_RUN_BASE --privileged -it "$IMAGE_NAME" /mnt/scripts/build.sh
+echo "$DOCKER_RUN_BASE" --privileged "$IMAGE_NAME" /mnt/scripts/build.sh "$1"
+$DOCKER_RUN_BASE --privileged "$IMAGE_NAME" /mnt/scripts/build.sh "$1"
