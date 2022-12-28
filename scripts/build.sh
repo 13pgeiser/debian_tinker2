@@ -9,6 +9,12 @@ export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
 export PLAT=rk3399
 BL31="$TOOLS_FOLDER/arm-trusted-firmware/build/rk3399/release/bl31/bl31.elf"
+kernel_version="TinkerBoard2-kernel-d4aa6a0"
+kernel_folder="$TOOLS_FOLDER/$kernel_version"
+dtb="$kernel_folder/arch/arm64/boot/dts/rockchip/rk3399-tinker_board_2.dtb"
+#kernel_version="linux-5.10.160"
+#kernel_folder="$TOOLS_FOLDER/$kernel_version"
+#dtb="$kernel_folder/arch/arm64/boot/dts/rockchip/rk3399-tinker-2.dtb"
 
 ###############################################################################
 # Build arm-trusted-firmware
@@ -76,30 +82,73 @@ uboot() {
 
 ###############################################################################
 # Builder Asus tinker2 kernel
-kernel_version="TinkerBoard2-kernel-d4aa6a0"
-kernel_folder="$TOOLS_FOLDER/$kernel_version"
-dtb="$kernel_folder/arch/arm64/boot/dts/rockchip/rk3399-tinker_board_2.dtb"
-kernel() {
-	download_unpack \
-		"dd0ec71e8848bd1a5ab48a782238b7cf" \
-		"https://github.com/TinkerBoard2/kernel/tarball/linux4.19-rk3399-debian10" \
-		"e" \
-		"TinkerBoard2-kernel-tinker_board_2-debian_10-2.1.6-3471-gd4aa6a0.tar.gz" \
-		"$kernel_version"
-	if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-		(
-			cd "$kernel_folder" || exit 1
-			make tinker_board_2_defconfig
-			make rockchip/rk3399-tinker_board_2.dtb
-			make Image -j"$(nproc)"
-			make bindeb-pkg "-j$(nproc)"
-		)
-		touch "$TOOLS_FOLDER/kernel_built"
-	fi
-	if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-		die "Could not build kernel. Bailing out"
-	fi
-}
+
+case $kernel_version in
+"TinkerBoard2-kernel-d4aa6a0")
+	kernel() {
+		download_unpack \
+			"dd0ec71e8848bd1a5ab48a782238b7cf" \
+			"https://github.com/TinkerBoard2/kernel/tarball/linux4.19-rk3399-debian10" \
+			"e" \
+			"TinkerBoard2-kernel-tinker_board_2-debian_10-2.1.6-3471-gd4aa6a0.tar.gz" \
+			"$kernel_version"
+		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+			(
+				cd "$kernel_folder" || exit 1
+				make tinker_board_2_defconfig
+				make rockchip/rk3399-tinker_board_2.dtb
+				make Image -j"$(nproc)"
+				make bindeb-pkg "-j$(nproc)"
+			)
+			touch "$TOOLS_FOLDER/kernel_built"
+		fi
+		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+			die "Could not build kernel. Bailing out"
+		fi
+	}
+	;;
+"linux-5.10.160")
+	kernel() {
+		download_unpack \
+			"211259e70b5c2f1cdf6decf5f77ffc9c" \
+			" https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.10.160.tar.xz" \
+			"e" \
+			"linux-5.10.160.tar.xz" \
+			"$kernel_version"
+		if [ ! -e "$TOOLS_FOLDER/kernel_patched" ]; then
+			patch_folder="$(pwd)/patches/kernel"
+
+			(
+				cd "$kernel_folder" || exit 1
+				for patch in "$patch_folder"/*.patch; do
+					echo "$patch"
+					patch -p1 <"$patch"
+				done
+			)
+			touch "$TOOLS_FOLDER/kernel_patched"
+		fi
+		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+			config="$(pwd)/linux-5.10.config"
+			(
+				cd "$kernel_folder" || exit 1
+				cp "$config" .config
+				make oldconfig
+				make rockchip/rk3399-tinker-2.dtb
+				make Image -j"$(nproc)"
+				make bindeb-pkg "-j$(nproc)"
+			)
+			touch "$TOOLS_FOLDER/kernel_built"
+		fi
+		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+			die "Could not build kernel. Bailing out"
+		fi
+	}
+	;;
+*)
+	echo "Unknown kernel: $kernel_version"
+	exit 1
+	;;
+esac
 
 ###############################################################################
 # Get debian root
@@ -144,7 +193,10 @@ EOF
 	dd if="$TOOLS_FOLDER/rkbin/trust.img" of="$TOOLS_FOLDER/sdcard.img" seek=24576 conv=notrunc
 
 	# Create u-boot boot script
-	mkimage -A arm -O linux -T script -C none -n "U-Boot boot script" -d boot.txt "$TOOLS_FOLDER/boot.scr"
+	cp -f boot.txt "$TOOLS_FOLDER/boot.txt"
+	sed -i "s/^setenv fdtfile.*/setenv fdtfile rockchip\/$(basename "$dtb")/" "$TOOLS_FOLDER/boot.txt"
+	# Create u-boot boot script
+	mkimage -A arm -O linux -T script -C none -n "U-Boot boot script" -d "$TOOLS_FOLDER/boot.txt" "$TOOLS_FOLDER/boot.scr"
 
 	# Create loop device partitions (for docker)...
 	loop="$(sudo losetup -f --show -P "$TOOLS_FOLDER/sdcard.img")"
@@ -161,7 +213,7 @@ EOF
 	done
 
 	run_in_chroot() {
-		sudo mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
+		sudo mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc || true
 		sudo update-binfmts --enable qemu-arm
 		sudo /etc/init.d/binfmt-support start
 		sudo mount -t proc proc /media/proc
@@ -172,7 +224,7 @@ EOF
 		sudo umount /media/dev/pts
 		sudo umount /media/dev/
 		sudo umount /media/proc
-		sudo rm -f debian_root/root/third-stage
+		sudo rm -f /media/root/third-stage
 		sudo rm -f /media/root/.bash_history
 	}
 
