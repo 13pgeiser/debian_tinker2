@@ -4,54 +4,46 @@ cd /mnt || exit 1
 source bash-scripts/helpers.sh
 
 ###############################################################################
+
+kernel="4.19"
+#kernel="5.10"
+
+###############################################################################
 # Set globals
 export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
-export PLAT=rk3399
-BL31="$TOOLS_FOLDER/arm-trusted-firmware/build/rk3399/release/bl31/bl31.elf"
-kernel_version="TinkerBoard2-kernel-d4aa6a0"
-kernel_folder="$TOOLS_FOLDER/$kernel_version"
-dtb="$kernel_folder/arch/arm64/boot/dts/rockchip/rk3399-tinker_board_2.dtb"
-#kernel_version="linux-5.10.160"
-#kernel_folder="$TOOLS_FOLDER/$kernel_version"
-#dtb="$kernel_folder/arch/arm64/boot/dts/rockchip/rk3399-tinker-2.dtb"
+export BL31="$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_bl31_v1.35.elf"
 
 ###############################################################################
-# Build arm-trusted-firmware
-arm_trusted() {
-	git_clone \
-		"arm-trusted-firmware" \
-		"https://github.com/ARM-software/arm-trusted-firmware.git" \
-		"tags/v2.8.0"
 
-	if [ ! -e "$BL31" ]; then
-		(
-			cd "$TOOLS_FOLDER/arm-trusted-firmware" || exit 1
-			make distclean
-			make PLAT=rk3399 bl31
-		)
-	fi
-	if [ ! -e "$BL31" ]; then
-		die "Could not build bl31.elf. Bailing out"
-	fi
-}
+case $kernel in
+"4.19")
+	# Official Tinker2 kernel
+	kernel_version_short="4.19.232"
+	kernel_version="TinkerBoard2-kernel-d4aa6a0"
+	kernel_md5="dd0ec71e8848bd1a5ab48a782238b7cf"
+	kernel_url="https://github.com/TinkerBoard2/kernel/tarball/linux4.19-rk3399-debian10"
+	dtb="rk3399-tinker_board_2.dtb"
+	;;
+"5.10")
+	kernel_version_short="5.10.160"
+	kernel_md5="211259e70b5c2f1cdf6decf5f77ffc9c"
+	kernel_version="linux-${kernel_version_short}"
+	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/${kernel_version}.tar.xz"
+	dtb="rk3399-tinker-2.dtb"
+	;;
+*)
+	echo "Unsupported"
+	;;
+esac
 
 ###############################################################################
 # Build trust.img
-trust_img() {
+rkbin() {
 	git_clone \
 		"rkbin" \
 		"https://github.com/rockchip-linux/rkbin.git" \
 		"master"
-	if [ ! -e "$TOOLS_FOLDER/rkbin/trust.img" ]; then
-		(
-			cd "$TOOLS_FOLDER/rkbin" || exit 1
-			./tools/trust_merger RKTRUST/RK3399TRUST.ini
-		)
-	fi
-	if [ ! -e "$TOOLS_FOLDER/rkbin/trust.img" ]; then
-		die "Could not create trust.img. Bailing out"
-	fi
 }
 
 ###############################################################################
@@ -60,15 +52,12 @@ uboot() {
 	git_clone \
 		"u-boot" \
 		"https://github.com/u-boot/u-boot" \
-		"tags/v2022.07"
+		"tags/v2021.07"
 	apply_patches "$TOOLS_FOLDER/u-boot" "$(pwd)/patches/u-boot"
 	if [ ! -e "$TOOLS_FOLDER/u-boot/u-boot" ]; then
 		(
-			export BL31
 			cd "$TOOLS_FOLDER/u-boot" || exit 1
 			make mrproper
-			# Change baud rate to 115200 bps
-			sed -i 's/^CONFIG_BAUDRATE.*/CONFIG_BAUDRATE\=115200/' configs/tinker-2-rk3399_defconfig
 			cp -f "$BL31" .
 			make tinker-2-rk3399_defconfig
 			make -j"$(nproc)" BL31="$BL31"
@@ -81,43 +70,23 @@ uboot() {
 }
 
 ###############################################################################
-# Builder Asus tinker2 kernel
+# Kernel
+kernel_folder="$TOOLS_FOLDER/$kernel_version"
 
-case $kernel_version in
-"TinkerBoard2-kernel-d4aa6a0")
-	kernel() {
-		download_unpack \
-			"dd0ec71e8848bd1a5ab48a782238b7cf" \
-			"https://github.com/TinkerBoard2/kernel/tarball/linux4.19-rk3399-debian10" \
-			"e" \
-			"TinkerBoard2-kernel-tinker_board_2-debian_10-2.1.6-3471-gd4aa6a0.tar.gz" \
-			"$kernel_version"
-		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-			(
-				cd "$kernel_folder" || exit 1
-				make tinker_board_2_defconfig
-				make rockchip/rk3399-tinker_board_2.dtb
-				make Image -j"$(nproc)"
-				make bindeb-pkg "-j$(nproc)"
-			)
-			touch "$TOOLS_FOLDER/kernel_built"
-		fi
-		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-			die "Could not build kernel. Bailing out"
-		fi
-	}
-	;;
-"linux-5.10.160")
-	kernel() {
-		download_unpack \
-			"211259e70b5c2f1cdf6decf5f77ffc9c" \
-			" https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.10.160.tar.xz" \
-			"e" \
-			"linux-5.10.160.tar.xz" \
-			"$kernel_version"
-		if [ ! -e "$TOOLS_FOLDER/kernel_patched" ]; then
-			patch_folder="$(pwd)/patches/kernel"
-
+kernel() {
+	extension="${kernel_url##*.}"
+	if [ "$extension" != 'xz' ]; then
+		extension="gz"
+	fi
+	download_unpack \
+		"$kernel_md5" \
+		"$kernel_url" \
+		"e" \
+		"linux-${kernel_version_short}.tar.${extension}" \
+		"$kernel_version"
+	if [ ! -e "$TOOLS_FOLDER/kernel_patched" ]; then
+		patch_folder="$(pwd)/patches/linux-${kernel_version_short}"
+		if [ -d "$patch_folder" ]; then
 			(
 				cd "$kernel_folder" || exit 1
 				for patch in "$patch_folder"/*.patch; do
@@ -125,30 +94,26 @@ case $kernel_version in
 					patch -p1 <"$patch"
 				done
 			)
-			touch "$TOOLS_FOLDER/kernel_patched"
 		fi
-		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-			config="$(pwd)/linux-5.10.config"
-			(
-				cd "$kernel_folder" || exit 1
-				cp "$config" .config
-				make oldconfig
-				make rockchip/rk3399-tinker-2.dtb
-				make Image -j"$(nproc)"
-				make bindeb-pkg "-j$(nproc)"
-			)
-			touch "$TOOLS_FOLDER/kernel_built"
-		fi
-		if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-			die "Could not build kernel. Bailing out"
-		fi
-	}
-	;;
-*)
-	echo "Unknown kernel: $kernel_version"
-	exit 1
-	;;
-esac
+		touch "$TOOLS_FOLDER/kernel_patched"
+	fi
+	if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+		config="$(pwd)/configs/linux-${kernel_version_short}.config"
+		(
+			cd "$kernel_folder" || exit 1
+			cp "$config" .config
+			make oldconfig
+			#make menuconfig
+			make rockchip/"$dtb"
+			make Image -j"$(nproc)"
+			make bindeb-pkg "-j$(nproc)"
+		)
+		touch "$TOOLS_FOLDER/kernel_built"
+	fi
+	if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
+		die "Could not build kernel. Bailing out"
+	fi
+}
 
 ###############################################################################
 # Get debian root
@@ -182,19 +147,22 @@ EOF
 	/sbin/parted "$TOOLS_FOLDER/sdcard.img" print
 	/sbin/fdisk -l "$TOOLS_FOLDER/sdcard.img"
 
-	# Copy rk3399_ddr_666MHz_v1.27.bin & rk3399_miniloader_v1.26.bin -> idbloader.img
-	"$TOOLS_FOLDER//u-boot/tools/mkimage" -n rk3399 -T rksd -d "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_ddr_666MHz_v1.27.bin" "$TOOLS_FOLDER/idbloader.img"
+	mkimage -n rk3399 -T rksd -d "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_ddr_800MHz_v1.27.bin" "$TOOLS_FOLDER/idbloader.img"
 	cat "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_miniloader_v1.26.bin" >>"$TOOLS_FOLDER/idbloader.img"
-	# Prepare uboot.img
-	"$TOOLS_FOLDER/rkbin/tools/loaderimage" --pack --uboot "$TOOLS_FOLDER//u-boot/u-boot-dtb.bin" "$TOOLS_FOLDER/uboot.img" 0x200000
+	"$TOOLS_FOLDER/rkbin/tools/loaderimage" --pack --uboot "$TOOLS_FOLDER/u-boot/u-boot-dtb.bin" "$TOOLS_FOLDER/uboot.img" 0x200000
+	(
+		cd "$TOOLS_FOLDER/u-boot" || exit 1
+		"$TOOLS_FOLDER/rkbin/tools/trust_merger" --replace bl31.elf $"$BL31" trust.ini
+	)
+
 	# Write idbloader, uboot.img and trust.img
 	dd if="$TOOLS_FOLDER/idbloader.img" of="$TOOLS_FOLDER/sdcard.img" seek=64 conv=notrunc
 	dd if="$TOOLS_FOLDER/uboot.img" of="$TOOLS_FOLDER/sdcard.img" seek=16384 conv=notrunc
-	dd if="$TOOLS_FOLDER/rkbin/trust.img" of="$TOOLS_FOLDER/sdcard.img" seek=24576 conv=notrunc
+	dd if="$TOOLS_FOLDER/u-boot/trust.bin" of="$TOOLS_FOLDER/sdcard.img" seek=24576 conv=notrunc
 
 	# Create u-boot boot script
 	cp -f boot.txt "$TOOLS_FOLDER/boot.txt"
-	sed -i "s/^setenv fdtfile.*/setenv fdtfile rockchip\/$(basename "$dtb")/" "$TOOLS_FOLDER/boot.txt"
+	sed -i "s/^setenv fdtfile.*/setenv fdtfile rockchip\/$dtb/" "$TOOLS_FOLDER/boot.txt"
 	# Create u-boot boot script
 	mkimage -A arm -O linux -T script -C none -n "U-Boot boot script" -d "$TOOLS_FOLDER/boot.txt" "$TOOLS_FOLDER/boot.scr"
 
@@ -232,9 +200,10 @@ EOF
 	sudo mkfs.ext4 -L root "${loop}p4"
 	sudo mount "${loop}p4" /media
 	sudo mkdir -p /media/boot/dtbs/rockchip/
-	sudo cp "$dtb" /media/boot/dtbs/rockchip/
+	sudo cp "$kernel_folder/arch/arm64/boot/dts/rockchip/$dtb" /media/boot/dtbs/rockchip/
 	sudo cp "$kernel_folder/arch/arm64/boot/Image" /media/boot
 	sudo cp "$TOOLS_FOLDER/boot.scr" /media/boot/
+	sudo cp "$TOOLS_FOLDER/boot.txt" /media/boot/
 	sudo rsync -ax "$TOOLS_FOLDER"/debian_root/* /media
 	sudo cp "$TOOLS_FOLDER"/*.deb /media/
 
@@ -281,7 +250,7 @@ EOF
 	echo "BLOCK_DEV $BLOCK_DEV"
 	PART_NUM="$(cat /sys/class/block/$BLOCK_DEV/partition)"
 	printf "fix\n" | parted ---pretend-input-tty "$BOOT_DEV" print
-	parted -s "$BOOT_DEV" "resizepart $PART_NUM -1" quit
+	printf "yes\n" | parted ---pretend-input-tty "$BOOT_DEV" "resizepart $PART_NUM -1" quit
 	partprobe
 	resize2fs "$BOOT_PART"
 	sync
@@ -303,6 +272,11 @@ EOF
 	WantedBy=multi-user.target
 EOF
 
+	# Make mkinitramfs happy.
+	sudo bash -c 'cat >>/media/etc/fstab' <<'EOF'
+/dev/mmcblk0p1 / ext4 defaults 0 1
+EOF
+
 	sudo bash -c 'cat >/media/root/third-stage' <<'EOF'
 		#!/bin/bash
 		set -x
@@ -315,21 +289,29 @@ EOF
 		set -ex
 		apt-get update
 		apt-get -y --no-install-recommends install \
-			sudo xz-utils ntp wpasupplicant  \
+			sudo xz-utils ntp wpasupplicant e2fsprogs \
 			locales-all initramfs-tools u-boot-tools locales \
 			console-common less network-manager laptop-mode-tools \
 			python3 task-ssh-server firmware-realtek firmware-linux parted
 		apt-get clean
 		dpkg -i /*.deb
 		apt-get -y dist-upgrade
+		apt-get -y remove dmidecode
 		apt-get -y autoremove
 		apt-get clean
 		depmod -a "$(ls /lib/modules)"
+		update-initramfs -v -u -k all
 		# Enable ssh key regeneration
 		systemctl enable regenerate_ssh_host_keys
 		systemctl enable resize_root
 EOF
 	run_in_chroot
+	(
+		cd /media/boot/ || exit 1
+		sudo ls -1 /media/boot/
+		sudo mkimage -A arm64 -O linux -T ramdisk -C gzip -n uInitrd -d "initrd.img-$kernel_version_short" uInitrd
+		sudo mkimage -A arm64 -T kernel -C none -d "$kernel_folder/arch/arm64/boot/Image" uImage
+	)
 	sudo rm -f /media/*.deb
 	sudo chmod +x /media/root/resize.sh
 	sudo df -h | grep /media
@@ -347,18 +329,15 @@ release() {
 }
 
 if [ -z "$1" ]; then
-	steps="arm_trusted trust_img uboot kernel debian_root sdcard release"
+	steps="rkbin uboot kernel debian_root sdcard release"
 else
 	steps="$*"
 fi
 for step in $steps; do
 	figlet "$step"
 	case $step in
-	"arm_trusted")
-		arm_trusted
-		;;
-	"trust_img")
-		trust_img
+	"rkbin")
+		rkbin
 		;;
 	"uboot")
 		uboot
