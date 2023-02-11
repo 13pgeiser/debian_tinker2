@@ -5,8 +5,23 @@ source bash-scripts/helpers.sh
 
 ###############################################################################
 
-kernel="4.19"
-#kernel="5.10"
+distrib=bullseye
+#distrib=bookworm
+
+###############################################################################
+
+case $distrib in
+"bullseye")
+	#kernel="4.19"
+	kernel="5.10" # Issues with drm
+	;;
+"bookworm")
+	kernel="6.1"
+	;;
+*)
+	echo "Unsupported"
+	;;
+esac
 
 ###############################################################################
 # Set globals
@@ -30,6 +45,13 @@ case $kernel in
 	kernel_md5="211259e70b5c2f1cdf6decf5f77ffc9c"
 	kernel_version="linux-${kernel_version_short}"
 	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/${kernel_version}.tar.xz"
+	dtb="rk3399-tinker-2.dtb"
+	;;
+"6.1")
+	kernel_version_short="6.1.9"
+	kernel_md5="ab1ac5556bd2c808e62bde0db04915f6"
+	kernel_version="linux-${kernel_version_short}"
+	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
 	dtb="rk3399-tinker-2.dtb"
 	;;
 *)
@@ -85,7 +107,7 @@ kernel() {
 		"linux-${kernel_version_short}.tar.${extension}" \
 		"$kernel_version"
 	if [ ! -e "$TOOLS_FOLDER/kernel_patched" ]; then
-		patch_folder="$(pwd)/patches/linux-${kernel_version_short}"
+		patch_folder="$(pwd)/patches/linux-${kernel}"
 		if [ -d "$patch_folder" ]; then
 			(
 				cd "$kernel_folder" || exit 1
@@ -98,7 +120,7 @@ kernel() {
 		touch "$TOOLS_FOLDER/kernel_patched"
 	fi
 	if [ ! -e "$TOOLS_FOLDER/kernel_built" ]; then
-		config="$(pwd)/configs/linux-${kernel_version_short}.config"
+		config="$(pwd)/configs/linux-${kernel}.config"
 		(
 			cd "$kernel_folder" || exit 1
 			cp "$config" .config
@@ -126,7 +148,7 @@ debian_root() {
 			sudo update-binfmts --enable qemu-arm
 			sudo /etc/init.d/binfmt-support start
 			# Extract debian!
-			sudo debootstrap --arch=arm64 bullseye debian_root http://httpredir.debian.org/debian
+			sudo debootstrap --arch=arm64 ${distrib} debian_root http://httpredir.debian.org/debian
 		)
 	fi
 }
@@ -207,12 +229,19 @@ EOF
 	sudo rsync -ax "$TOOLS_FOLDER"/debian_root/* /media
 	sudo cp "$TOOLS_FOLDER"/*.deb /media/
 
-	# Update Apt sources for bullseye
-	sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
+	# Update Apt sources
+	if [ "$distrib" == "bullseye" ]; then
+		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
 	deb http://httpredir.debian.org/debian bullseye main non-free contrib
 	deb-src http://httpredir.debian.org/debian bullseye main non-free contrib
 	deb https://security.debian.org/debian-security bullseye-security main contrib non-free
 EOF
+	else
+		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
+	deb http://httpredir.debian.org/debian bookworm main non-free non-free-firmware contrib
+	deb-src http://httpredir.debian.org/debian bookworm main non-free non-free-firmware contrib
+EOF
+	fi
 
 	# Add loopback interface
 	sudo mkdir -p /media/etc/network
@@ -285,14 +314,15 @@ EOF
 		cat /etc/resolv.conf
 		export DEBIAN_FRONTEND=noninteractive
 		apt-get update
-		apt-get -y --no-install-recommends install ca-certificates
+		apt-get -y --no-install-recommends install ca-certificates zstd
 		set -ex
 		apt-get update
 		apt-get -y --no-install-recommends install \
 			sudo xz-utils ntp wpasupplicant e2fsprogs \
 			locales-all initramfs-tools u-boot-tools locales \
 			console-common less network-manager laptop-mode-tools \
-			python3 task-ssh-server firmware-realtek firmware-linux parted
+			python3 task-ssh-server firmware-realtek \
+			firmware-linux-free parted firmware-misc-nonfree
 		apt-get clean
 		dpkg -i /*.deb
 		apt-get -y dist-upgrade
