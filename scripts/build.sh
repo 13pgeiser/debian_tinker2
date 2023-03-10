@@ -41,8 +41,8 @@ case $kernel in
 	dtb="rk3399-tinker_board_2.dtb"
 	;;
 "5.10")
-	kernel_version_short="5.10.160"
-	kernel_md5="211259e70b5c2f1cdf6decf5f77ffc9c"
+	kernel_version_short="5.10.172"
+	kernel_md5="aa85e5dea4f1c61652404a99fbc567ad"
 	kernel_version="linux-${kernel_version_short}"
 	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/${kernel_version}.tar.xz"
 	dtb="rk3399-tinker-2.dtb"

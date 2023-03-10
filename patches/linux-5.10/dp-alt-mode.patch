@@ -1,50 +1,7 @@
-From a1bbffd1cbb883be7fe3da1d09c29d57cfbeb2da Mon Sep 17 00:00:00 2001
-From: Dan Johansen <strit@manjaro.org>
-Date: Tue, 2 Jun 2020 20:20:29 +0200
-Subject: [PATCH] add-dp-alt-mode-to-PBP
-
----
- .../boot/dts/rockchip/rk3399-pinebook-pro.dts |   5 +
- drivers/phy/rockchip/phy-rockchip-typec.c     |  17 +++
- drivers/usb/typec/altmodes/displayport.c      |  58 +++++++-
- drivers/usb/typec/bus.c                       |   8 +-
- drivers/usb/typec/tcpm/tcpm.c                 | 139 +++++++++++++++++-
- 5 files changed, 221 insertions(+), 6 deletions(-)
-
-diff --git a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
-index c49982dfd8fc..66cf08e8506f 100644
---- a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
-+++ b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
-@@ -374,6 +374,7 @@ mains_charger: dc-charger {
  
- &cdn_dp {
- 	status = "okay";
-+	extcon = <&fusb0>;
- };
- 
- &cpu_b0 {
-@@ -708,6 +709,9 @@ connector {
- 				<PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM)>;
- 			try-power-role = "sink";
- 
-+			extcon-cables = <1 2 5 6 9 10 12 44>;
-+			typec-altmodes = <0xff01 1 0x001c0000 1>;
-+
- 			ports {
- 				#address-cells = <1>;
- 				#size-cells = <0>;
-@@ -958,6 +962,7 @@ spiflash: flash@0 {
- };
- 
- &tcphy0 {
-+	extcon = <&fusb0>;
- 	status = "okay";
- };
- 
-diff --git a/drivers/phy/rockchip/phy-rockchip-typec.c b/drivers/phy/rockchip/phy-rockchip-typec.c
-index 24563160197f..f5b497b4b97e 100644
---- a/drivers/phy/rockchip/phy-rockchip-typec.c
-+++ b/drivers/phy/rockchip/phy-rockchip-typec.c
+diff -Naur linux-5.10.172.orig/drivers/phy/rockchip/phy-rockchip-typec.c linux-5.10.172/drivers/phy/rockchip/phy-rockchip-typec.c
+--- linux-5.10.172.orig/drivers/phy/rockchip/phy-rockchip-typec.c	2023-03-03 15:13:15.000000000 +0100
++++ linux-5.10.172/drivers/phy/rockchip/phy-rockchip-typec.c	2023-03-10 15:01:41.180376858 +0100
 @@ -40,6 +40,7 @@
  #include <linux/clk-provider.h>
  #include <linux/delay.h>
@@ -53,7 +10,7 @@ index 24563160197f..f5b497b4b97e 100644
  #include <linux/io.h>
  #include <linux/iopoll.h>
  #include <linux/kernel.h>
-@@ -1160,6 +1161,22 @@ static int rockchip_typec_phy_probe(struct platform_device *pdev)
+@@ -1160,6 +1161,22 @@
  				dev_err(dev, "Invalid or missing extcon\n");
  			return PTR_ERR(tcphy->extcon);
  		}
@@ -76,10 +33,9 @@ index 24563160197f..f5b497b4b97e 100644
  	}
  
  	pm_runtime_enable(dev);
-diff --git a/drivers/usb/typec/altmodes/displayport.c b/drivers/usb/typec/altmodes/displayport.c
-index 0edfb89e04a8..40dd68c20159 100644
---- a/drivers/usb/typec/altmodes/displayport.c
-+++ b/drivers/usb/typec/altmodes/displayport.c
+diff -Naur linux-5.10.172.orig/drivers/usb/typec/altmodes/displayport.c linux-5.10.172/drivers/usb/typec/altmodes/displayport.c
+--- linux-5.10.172.orig/drivers/usb/typec/altmodes/displayport.c	2023-03-03 15:13:15.000000000 +0100
++++ linux-5.10.172/drivers/usb/typec/altmodes/displayport.c	2023-03-10 15:02:35.569058957 +0100
 @@ -9,6 +9,8 @@
   */
  
@@ -89,7 +45,7 @@ index 0edfb89e04a8..40dd68c20159 100644
  #include <linux/mutex.h>
  #include <linux/module.h>
  #include <linux/usb/pd_vdo.h>
-@@ -134,15 +136,53 @@ static int dp_altmode_status_update(struct dp_altmode *dp)
+@@ -135,15 +137,53 @@
  	return ret;
  }
  
@@ -144,7 +100,7 @@ index 0edfb89e04a8..40dd68c20159 100644
  
  	ret = dp_altmode_notify(dp);
  	if (ret)
-@@ -169,9 +209,11 @@ static int dp_altmode_configure_vdm(struct dp_altmode *dp, u32 conf)
+@@ -170,9 +210,11 @@
  	if (ret) {
  		if (DP_CONF_GET_PIN_ASSIGN(dp->data.conf))
  			dp_altmode_notify(dp);
@@ -157,7 +113,7 @@ index 0edfb89e04a8..40dd68c20159 100644
  	}
  
  	return ret;
-@@ -210,6 +252,8 @@ static void dp_altmode_work(struct work_struct *work)
+@@ -211,6 +253,8 @@
  	case DP_STATE_EXIT:
  		if (typec_altmode_exit(dp->alt))
  			dev_err(&dp->alt->dev, "Exit Mode Failed!\n");
@@ -166,12 +122,18 @@ index 0edfb89e04a8..40dd68c20159 100644
  		break;
  	default:
  		break;
-@@ -520,8 +564,14 @@ int dp_altmode_probe(struct typec_altmode *alt)
- 	if (!(DP_CAP_DFP_D_PIN_ASSIGN(port->vdo) &
- 	      DP_CAP_UFP_D_PIN_ASSIGN(alt->vdo)) &&
- 	    !(DP_CAP_UFP_D_PIN_ASSIGN(port->vdo) &
--	      DP_CAP_DFP_D_PIN_ASSIGN(alt->vdo)))
+@@ -524,11 +568,16 @@
+ 	/* FIXME: Port can only be DFP_U. */
+ 
+ 	/* Make sure we have compatiple pin configurations */
+-	if (!(DP_CAP_PIN_ASSIGN_DFP_D(port->vdo) &
+-	      DP_CAP_PIN_ASSIGN_UFP_D(alt->vdo)) &&
+-	    !(DP_CAP_PIN_ASSIGN_UFP_D(port->vdo) &
+-	      DP_CAP_PIN_ASSIGN_DFP_D(alt->vdo)))
 -		return -ENODEV;
++	if (!(DP_CAP_DFP_D_PIN_ASSIGN(port->vdo) &
++	      DP_CAP_UFP_D_PIN_ASSIGN(alt->vdo)) &&
++	    !(DP_CAP_UFP_D_PIN_ASSIGN(port->vdo) &
 +	      DP_CAP_DFP_D_PIN_ASSIGN(alt->vdo))) {
 +            dev_err(&alt->dev, "No compatible pin configuration found:"\
 +                    "%04lx -> %04lx, %04lx <- %04lx",
@@ -179,15 +141,13 @@ index 0edfb89e04a8..40dd68c20159 100644
 +                    DP_CAP_UFP_D_PIN_ASSIGN(port->vdo), DP_CAP_DFP_D_PIN_ASSIGN(alt->vdo));
 +            return -ENODEV;
 +	}
-+
  
  	ret = sysfs_create_group(&alt->dev.kobj, &dp_altmode_group);
  	if (ret)
-diff --git a/drivers/usb/typec/bus.c b/drivers/usb/typec/bus.c
-index e8ddb81cb6df..cbc01d73739c 100644
---- a/drivers/usb/typec/bus.c
-+++ b/drivers/usb/typec/bus.c
-@@ -154,8 +154,14 @@ EXPORT_SYMBOL_GPL(typec_altmode_exit);
+diff -Naur linux-5.10.172.orig/drivers/usb/typec/bus.c linux-5.10.172/drivers/usb/typec/bus.c
+--- linux-5.10.172.orig/drivers/usb/typec/bus.c	2023-03-03 15:13:15.000000000 +0100
++++ linux-5.10.172/drivers/usb/typec/bus.c	2023-03-10 15:01:41.180376858 +0100
+@@ -154,8 +154,14 @@
   */
  void typec_altmode_attention(struct typec_altmode *adev, u32 vdo)
  {
@@ -203,10 +163,9 @@ index e8ddb81cb6df..cbc01d73739c 100644
  	if (pdev->ops && pdev->ops->attention)
  		pdev->ops->attention(pdev, vdo);
  }
-diff --git a/drivers/usb/typec/tcpm/tcpm.c b/drivers/usb/typec/tcpm/tcpm.c
-index 82b19ebd7838..6f00b17afc15 100644
---- a/drivers/usb/typec/tcpm/tcpm.c
-+++ b/drivers/usb/typec/tcpm/tcpm.c
+diff -Naur linux-5.10.172.orig/drivers/usb/typec/tcpm/tcpm.c linux-5.10.172/drivers/usb/typec/tcpm/tcpm.c
+--- linux-5.10.172.orig/drivers/usb/typec/tcpm/tcpm.c	2023-03-03 15:13:15.000000000 +0100
++++ linux-5.10.172/drivers/usb/typec/tcpm/tcpm.c	2023-03-10 15:01:41.184376909 +0100
 @@ -8,6 +8,7 @@
  #include <linux/completion.h>
  #include <linux/debugfs.h>
@@ -215,9 +174,9 @@ index 82b19ebd7838..6f00b17afc15 100644
  #include <linux/hrtimer.h>
  #include <linux/jiffies.h>
  #include <linux/kernel.h>
-@@ -322,6 +323,11 @@ struct tcpm_port {
- 	/* port belongs to a self powered device */
- 	bool self_powered;
+@@ -387,6 +388,11 @@
+ 	/* Sink caps have been queried */
+ 	bool sink_cap_done;
  
 +#ifdef CONFIG_EXTCON
 +	struct extcon_dev *extcon;
@@ -227,7 +186,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  #ifdef CONFIG_DEBUG_FS
  	struct dentry *dentry;
  	struct mutex logbuffer_lock;	/* log buffer access lock */
-@@ -607,6 +613,35 @@ static void tcpm_debugfs_exit(const struct tcpm_port *port) { }
+@@ -672,6 +678,35 @@
  
  #endif
  
@@ -263,7 +222,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  static int tcpm_pd_transmit(struct tcpm_port *port,
  			    enum tcpm_transmit_type type,
  			    const struct pd_message *msg)
-@@ -834,6 +869,8 @@ static int tcpm_set_roles(struct tcpm_port *port, bool attached,
+@@ -900,6 +935,8 @@
  	typec_set_data_role(port->typec_port, data);
  	typec_set_pwr_role(port->typec_port, role);
  
@@ -272,27 +231,25 @@ index 82b19ebd7838..6f00b17afc15 100644
  	return 0;
  }
  
-@@ -1044,7 +1081,7 @@ static void svdm_consume_modes(struct tcpm_port *port, const __le32 *payload,
+@@ -1151,7 +1188,7 @@
  		paltmode->mode = i;
- 		paltmode->vdo = le32_to_cpu(payload[i]);
+ 		paltmode->vdo = p[i];
  
 -		tcpm_log(port, " Alternate mode %d: SVID 0x%04x, VDO %d: 0x%08x",
 +		tcpm_log(port, "Alternate mode %d: SVID 0x%04x, VDO %d: 0x%08x",
  			 pmdata->altmodes, paltmode->svid,
  			 paltmode->mode, paltmode->vdo);
  
-@@ -1064,7 +1101,9 @@ static void tcpm_register_partner_altmodes(struct tcpm_port *port)
+@@ -1172,6 +1209,8 @@
  			tcpm_log(port, "Failed to register partner SVID 0x%04x",
  				 modep->altmode_desc[i].svid);
-			altmode = NULL;
--		}
+ 			altmode = NULL;
 +		} else {
 +			tcpm_log(port, "Registered altmode 0x%04x", modep->altmode_desc[i].svid);
-+		}
+ 		}
  		port->partner_altmode[i] = altmode;
  	}
- }
-@@ -1167,9 +1207,11 @@ static int tcpm_pd_svdm(struct tcpm_port *port, const __le32 *payload, int cnt,
+@@ -1268,9 +1307,11 @@
  			modep->svid_index++;
  			if (modep->svid_index < modep->nsvids) {
  				u16 svid = modep->svids[modep->svid_index];
@@ -304,7 +261,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  				tcpm_register_partner_altmodes(port);
  			}
  			break;
-@@ -2693,6 +2735,7 @@ static int tcpm_src_attach(struct tcpm_port *port)
+@@ -2862,6 +2903,7 @@
  static void tcpm_typec_disconnect(struct tcpm_port *port)
  {
  	if (port->connected) {
@@ -312,8 +269,8 @@ index 82b19ebd7838..6f00b17afc15 100644
  		typec_unregister_partner(port->partner);
  		port->partner = NULL;
  		port->connected = false;
-@@ -2750,6 +2793,8 @@ static void tcpm_detach(struct tcpm_port *port)
- 		port->hard_reset_count = 0;
+@@ -2927,6 +2969,8 @@
+ 	}
  
  	tcpm_reset_port(port);
 +
@@ -321,7 +278,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  }
  
  static void tcpm_src_detach(struct tcpm_port *port)
-@@ -4424,6 +4469,64 @@ void tcpm_tcpc_reset(struct tcpm_port *port)
+@@ -4755,6 +4799,64 @@
  }
  EXPORT_SYMBOL_GPL(tcpm_tcpc_reset);
  
@@ -386,7 +343,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  static int tcpm_fw_get_caps(struct tcpm_port *port,
  			    struct fwnode_handle *fwnode)
  {
-@@ -4434,6 +4537,23 @@ static int tcpm_fw_get_caps(struct tcpm_port *port,
+@@ -4765,6 +4867,23 @@
  	if (!fwnode)
  		return -EINVAL;
  
@@ -410,7 +367,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  	/* USB data support is optional */
  	ret = fwnode_property_read_string(fwnode, "data-role", &cap_str);
  	if (ret == 0) {
-@@ -4766,6 +4886,17 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
+@@ -5137,6 +5256,17 @@
  		goto out_destroy_wq;
  
  	port->try_role = port->typec_caps.prefer_role;
@@ -428,7 +385,7 @@ index 82b19ebd7838..6f00b17afc15 100644
  
  	port->typec_caps.fwnode = tcpc->fwnode;
  	port->typec_caps.revision = 0x0120;	/* Type-C spec release 1.2 */
-@@ -4793,6 +4924,12 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
+@@ -5165,6 +5295,12 @@
  		goto out_role_sw_put;
  	}
  
@@ -441,6 +398,5 @@ index 82b19ebd7838..6f00b17afc15 100644
  	mutex_lock(&port->lock);
  	tcpm_init(port);
  	mutex_unlock(&port->lock);
--- 
-2.26.2
 
+ 
