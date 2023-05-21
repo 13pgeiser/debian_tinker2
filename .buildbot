@@ -1,0 +1,3 @@
+# Just call build.sh
+bash ./build.sh
+directory_upload release
