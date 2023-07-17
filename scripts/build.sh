@@ -27,7 +27,8 @@ esac
 # Set globals
 export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
-export BL31="$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_bl31_v1.35.elf"
+export BL31="$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_bl31_v1.36.elf"
+export DDR="rk3399_ddr_800MHz_v1.30.bin"
 
 ###############################################################################
 
@@ -41,15 +42,15 @@ case $kernel in
 	dtb="rk3399-tinker_board_2.dtb"
 	;;
 "5.10")
-	kernel_version_short="5.10.172"
-	kernel_md5="aa85e5dea4f1c61652404a99fbc567ad"
+	kernel_version_short="5.10.186"
+	kernel_md5="f73e35d77a00d59c31ccec3b185b3c37"
 	kernel_version="linux-${kernel_version_short}"
 	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/${kernel_version}.tar.xz"
 	dtb="rk3399-tinker-2.dtb"
 	;;
 "6.1")
-	kernel_version_short="6.1.9"
-	kernel_md5="ab1ac5556bd2c808e62bde0db04915f6"
+	kernel_version_short="6.1.19"
+	kernel_md5="fb8f9f396e6415cfcd81c69eba3c42be"
 	kernel_version="linux-${kernel_version_short}"
 	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
 	dtb="rk3399-tinker-2.dtb"
@@ -169,7 +170,7 @@ EOF
 	/sbin/parted "$TOOLS_FOLDER/sdcard.img" print
 	/sbin/fdisk -l "$TOOLS_FOLDER/sdcard.img"
 
-	mkimage -n rk3399 -T rksd -d "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_ddr_800MHz_v1.27.bin" "$TOOLS_FOLDER/idbloader.img"
+	mkimage -n rk3399 -T rksd -d "$TOOLS_FOLDER/rkbin/bin/rk33/$DDR" "$TOOLS_FOLDER/idbloader.img"
 	cat "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_miniloader_v1.26.bin" >>"$TOOLS_FOLDER/idbloader.img"
 	"$TOOLS_FOLDER/rkbin/tools/loaderimage" --pack --uboot "$TOOLS_FOLDER/u-boot/u-boot-dtb.bin" "$TOOLS_FOLDER/uboot.img" 0x200000
 	(
