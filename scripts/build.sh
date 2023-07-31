@@ -29,7 +29,7 @@ export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
 export BL31="$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_bl31_v1.36.elf"
 export DDR="rk3399_ddr_800MHz_v1.30.bin"
-
+export MINILOADER="rk3399_miniloader_v1.30.bin"
 ###############################################################################
 
 case $kernel in
@@ -171,7 +171,7 @@ EOF
 	/sbin/fdisk -l "$TOOLS_FOLDER/sdcard.img"
 
 	mkimage -n rk3399 -T rksd -d "$TOOLS_FOLDER/rkbin/bin/rk33/$DDR" "$TOOLS_FOLDER/idbloader.img"
-	cat "$TOOLS_FOLDER/rkbin/bin/rk33/rk3399_miniloader_v1.26.bin" >>"$TOOLS_FOLDER/idbloader.img"
+	cat "$TOOLS_FOLDER/rkbin/bin/rk33/$MINILOADER" >>"$TOOLS_FOLDER/idbloader.img"
 	"$TOOLS_FOLDER/rkbin/tools/loaderimage" --pack --uboot "$TOOLS_FOLDER/u-boot/u-boot-dtb.bin" "$TOOLS_FOLDER/uboot.img" 0x200000
 	(
 		cd "$TOOLS_FOLDER/u-boot" || exit 1
