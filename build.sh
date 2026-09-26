@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+git submodule update --init
 source bash-scripts/helpers.sh
 if [ -z "$1" ]; then
 	run_shfmt_and_shellcheck ./*.sh
