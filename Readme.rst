@@ -1,5 +1,5 @@
-Debian Bullseye on Tinker 2
-###########################
+Debian Trixie on Tinker 2
+#########################
 
 Patches taken from Armbian:
  * https://www.armbian.com/

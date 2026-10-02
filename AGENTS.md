@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Builds Debian (Bullseye default, Bookworm optional) SD card images for the Tinker Board 2 (RK3399, arm64). Patches are derived from Armbian (see `Readme.rst`).
+Builds a Debian Trixie SD card image for the Tinker Board 2 (RK3399, arm64). Patches are derived from Armbian (see `Readme.rst`).
 
 ## Building
 
@@ -16,8 +16,8 @@ Builds Debian (Bullseye default, Bookworm optional) SD card images for the Tinke
 
 ## Version pinning (fragile)
 
-- Kernel selection is at the top of `scripts/build.sh`: `distrib=bullseye` → kernel 5.10 (`4.19` commented out due to drm issues; `bookworm` → 6.1). 4.19 comes from the official TinkerBoard2 tarball; 5.10/6.1 from kernel.org with pinned version + md5.
-- DTB name differs per kernel: `rk3399-tinker_board_2.dtb` (4.19) vs `rk3399-tinker-2.dtb` (5.10/6.1). `boot.txt` is a template; the `setenv fdtfile` line is sed-replaced with the right DTB in the `sdcard` step.
+- Kernel is pinned to 6.12.111 (kernel.org, version + md5) for the `trixie` distribution; both are hardcoded at the top of `scripts/build.sh`.
+- DTB is `rk3399-tinker-2.dtb`. `boot.txt` is a template; the `setenv fdtfile` line is sed-replaced with that DTB in the `sdcard` step.
 - u-boot: pinned to `tags/v2021.07`, `tinker-2-rk3399_defconfig`. rkbin is cloned from `master`, but BL31/DDR/miniloader filenames are hardcoded (`rk3399_bl31_v1.36.elf`, `rk3399_ddr_800MHz_v1.30.bin`, `rk3399_miniloader_v1.30.bin`) — the build breaks if rkbin master renames them.
 
 ## Idempotency and caches

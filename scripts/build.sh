@@ -4,28 +4,8 @@ cd /mnt || exit 1
 source bash-scripts/helpers.sh
 
 ###############################################################################
-
-#distrib=bullseye
-#distrib=bookworm
-distrib=trixie
-
-###############################################################################
-
-case $distrib in
-"bullseye")
-	#kernel="4.19"
-	kernel="5.10" # Issues with drm
-	;;
-"bookworm")
-	kernel="6.1"
-	;;
-"trixie")
-	kernel="6.12"
-	;;
-*)
-	echo "Unsupported"
-	;;
-esac
+distrib="trixie"
+kernel="6.12"
 
 ###############################################################################
 # Set globals
@@ -36,40 +16,11 @@ export DDR="rk3399_ddr_800MHz_v1.30.bin"
 export MINILOADER="rk3399_miniloader_v1.30.bin"
 ###############################################################################
 
-case $kernel in
-"4.19")
-	# Official Tinker2 kernel
-	kernel_version_short="4.19.232"
-	kernel_version="TinkerBoard2-kernel-d4aa6a0"
-	kernel_md5="dd0ec71e8848bd1a5ab48a782238b7cf"
-	kernel_url="https://github.com/TinkerBoard2/kernel/tarball/linux4.19-rk3399-debian10"
-	dtb="rk3399-tinker_board_2.dtb"
-	;;
-"5.10")
-	kernel_version_short="5.10.186"
-	kernel_md5="f73e35d77a00d59c31ccec3b185b3c37"
-	kernel_version="linux-${kernel_version_short}"
-	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/${kernel_version}.tar.xz"
-	dtb="rk3399-tinker-2.dtb"
-	;;
-"6.1")
-	kernel_version_short="6.1.19"
-	kernel_md5="fb8f9f396e6415cfcd81c69eba3c42be"
-	kernel_version="linux-${kernel_version_short}"
-	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
-	dtb="rk3399-tinker-2.dtb"
-	;;
-"6.12")
-	kernel_version_short="6.12.111"
-	kernel_md5="3292d69e6b6bdc9c5dba9d09409d6df5"
-	kernel_version="linux-${kernel_version_short}"
-	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
-	dtb="rk3399-tinker-2.dtb"
-	;;
-*)
-	echo "Unsupported"
-	;;
-esac
+kernel_version_short="6.12.111"
+kernel_md5="3292d69e6b6bdc9c5dba9d09409d6df5"
+kernel_version="linux-${kernel_version_short}"
+kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
+dtb="rk3399-tinker-2.dtb"
 
 ###############################################################################
 # Build trust.img
@@ -284,24 +235,11 @@ EOF
 	sudo cp "$TOOLS_FOLDER"/*.deb /media/
 
 	# Update Apt sources
-	if [ "$distrib" == "bullseye" ]; then
-		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
-	deb http://httpredir.debian.org/debian bullseye main non-free contrib
-	deb-src http://httpredir.debian.org/debian bullseye main non-free contrib
-	deb https://security.debian.org/debian-security bullseye-security main contrib non-free
-EOF
-	elif [ "$distrib" == "trixie" ]; then
-		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
+	sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
 	deb http://httpredir.debian.org/debian trixie main non-free non-free-firmware contrib
 	deb-src http://httpredir.debian.org/debian trixie main non-free non-free-firmware contrib
 	deb https://security.debian.org/debian-security trixie-security main non-free non-free-firmware contrib
 EOF
-	else
-		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
-	deb http://httpredir.debian.org/debian bookworm main non-free non-free-firmware contrib
-	deb-src http://httpredir.debian.org/debian bookworm main non-free non-free-firmware contrib
-EOF
-	fi
 
 	# Add loopback interface
 	sudo mkdir -p /media/etc/network
