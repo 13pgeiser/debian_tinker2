@@ -14,11 +14,13 @@ docker_build_image_and_create_volume
 dockerfile_setup_debootstrap
 cat >>"$DOCKERFILE" <<'EOF'
 RUN set -ex \
+    && dpkg --add-architecture arm64 \
     && apt-get update \
     && apt-get dist-upgrade -y \
     && apt-get install -y --no-install-recommends \
     	crossbuild-essential-arm64 \
-	gcc-arm-none-eabi \
+	    gcc-arm-none-eabi \
+        libssl-dev:arm64 \
     && apt-get clean \
     && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
 EOF

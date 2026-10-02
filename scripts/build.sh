@@ -5,8 +5,9 @@ source bash-scripts/helpers.sh
 
 ###############################################################################
 
-distrib=bullseye
+#distrib=bullseye
 #distrib=bookworm
+distrib=trixie
 
 ###############################################################################
 
@@ -17,6 +18,9 @@ case $distrib in
 	;;
 "bookworm")
 	kernel="6.1"
+	;;
+"trixie")
+	kernel="6.12"
 	;;
 *)
 	echo "Unsupported"
@@ -51,6 +55,13 @@ case $kernel in
 "6.1")
 	kernel_version_short="6.1.19"
 	kernel_md5="fb8f9f396e6415cfcd81c69eba3c42be"
+	kernel_version="linux-${kernel_version_short}"
+	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
+	dtb="rk3399-tinker-2.dtb"
+	;;
+"6.12")
+	kernel_version_short="6.12.111"
+	kernel_md5="3292d69e6b6bdc9c5dba9d09409d6df5"
 	kernel_version="linux-${kernel_version_short}"
 	kernel_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/${kernel_version}.tar.xz"
 	dtb="rk3399-tinker-2.dtb"
@@ -139,16 +150,60 @@ kernel() {
 }
 
 ###############################################################################
+# Make sure arm64 binaries can be executed transparently via qemu
+ensure_binfmt_aarch64() {
+	sudo mkdir -p /proc/sys/fs/binfmt_misc 2>/dev/null || true
+	local mnt_err
+	mnt_err="$(sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>&1)" || true
+	if [ -e /proc/sys/fs/binfmt_misc/register ]; then
+		if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+			local qemu_bin qemu_flags
+			if qemu_bin="$(command -v qemu-aarch64-static)"; then
+				# P: don't open the binary (static qemu), F: required for dynamic registration
+				qemu_flags="OPF"
+			elif qemu_bin="$(command -v qemu-aarch64)"; then
+				# O: open the binary (dynamic qemu), F: required for dynamic registration
+				qemu_flags="OF"
+			else
+				echo "ERROR: qemu-aarch64 not found. Install the 'qemu-user' package." >&2
+				exit 1
+			fi
+			if ! printf '%s\n' ":qemu-aarch64:M::\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:${qemu_bin}:${qemu_flags}" | sudo tee /proc/sys/fs/binfmt_misc/register >/dev/null; then
+				echo "ERROR: could not register qemu-aarch64 binfmt" >&2
+				exit 1
+			fi
+		fi
+		cat /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null || true
+		return 0
+	fi
+	# binfmt_misc could not be mounted inside this container, but a binfmt
+	# registered on the host (e.g. via qemu-user-static) is global kernel
+	# state and also covers processes in containers. Test it functionally.
+	if command -v gcc-aarch64-linux-gnu >/dev/null 2>&1; then
+		local test_bin
+		test_bin="$(mktemp /tmp/binfmt_test_XXXXXX)"
+		if printf 'int main(void){return 0;}' | gcc-aarch64-linux-gnu -static -o "$test_bin" - 2>/dev/null &&
+			"$test_bin" >/dev/null 2>&1; then
+			rm -f "$test_bin"
+			echo "note: arm64 binfmt is provided by the host (cannot mount binfmt_misc here: ${mnt_err})"
+			return 0
+		fi
+		rm -f "$test_bin"
+	fi
+	echo "ERROR: binfmt_misc unavailable: ${mnt_err}" >&2
+	echo "       Run the build in a --privileged docker container (as the top-level ./build.sh does)," >&2
+	echo "       or enable qemu-user-static on the host so the arm64 binfmt is already registered." >&2
+	exit 1
+}
+
+###############################################################################
 # Get debian root
 debian_root() {
 	if [ ! -d "$TOOLS_FOLDER/debian_root" ]; then
 		(
 			cd "$TOOLS_FOLDER" || exit 1
-			# Make sure qemu-arm can execute transparently ARM binaries.
-			sudo mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc
-			sudo update-binfmts --enable qemu-arm
-			sudo /etc/init.d/binfmt-support start
 			# Extract debian!
+			ensure_binfmt_aarch64
 			sudo debootstrap --arch=arm64 ${distrib} debian_root http://httpredir.debian.org/debian
 		)
 	fi
@@ -204,9 +259,7 @@ EOF
 	done
 
 	run_in_chroot() {
-		sudo mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc || true
-		sudo update-binfmts --enable qemu-arm
-		sudo /etc/init.d/binfmt-support start
+		ensure_binfmt_aarch64
 		sudo mount -t proc proc /media/proc
 		sudo mount -o bind /dev/ /media/dev/
 		sudo mount -o bind /dev/pts /media/dev/pts
@@ -236,6 +289,12 @@ EOF
 	deb http://httpredir.debian.org/debian bullseye main non-free contrib
 	deb-src http://httpredir.debian.org/debian bullseye main non-free contrib
 	deb https://security.debian.org/debian-security bullseye-security main contrib non-free
+EOF
+	elif [ "$distrib" == "trixie" ]; then
+		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
+	deb http://httpredir.debian.org/debian trixie main non-free non-free-firmware contrib
+	deb-src http://httpredir.debian.org/debian trixie main non-free non-free-firmware contrib
+	deb https://security.debian.org/debian-security trixie-security main non-free non-free-firmware contrib
 EOF
 	else
 		sudo bash -c 'cat >/media/etc/apt/sources.list' <<'EOF'
@@ -319,7 +378,7 @@ EOF
 		set -ex
 		apt-get update
 		apt-get -y --no-install-recommends install \
-			sudo xz-utils ntp wpasupplicant e2fsprogs \
+			sudo xz-utils ntpsec wpasupplicant e2fsprogs \
 			locales-all initramfs-tools u-boot-tools locales \
 			console-common less network-manager laptop-mode-tools \
 			python3 task-ssh-server firmware-realtek \
